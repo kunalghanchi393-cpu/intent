@@ -1,3 +1,0 @@
-masumi
-python-dotenv
-aiohttp
