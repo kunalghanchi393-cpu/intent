@@ -18,7 +18,6 @@ OUTREACH_SERVICE_URL = os.getenv("OUTREACH_SERVICE_URL", "http://localhost:3000"
 OUTREACH_TIMEOUT = int(os.getenv("OUTREACH_TIMEOUT", "30"))
 
 COMPANY_SIZE_OPTIONS = ["startup", "small", "medium", "large", "enterprise"]
-
 INTENT_SIGNAL_OPTIONS = [
     "job_change",
     "funding_event",
@@ -27,31 +26,60 @@ INTENT_SIGNAL_OPTIONS = [
     "industry_trend"
 ]
 
+
+def normalize_input_data(raw: Any) -> dict:
+    """
+    Sokosumi may send input_data as either:
+      - A list: [{"id": "prospect_name", "value": "John"}]
+      - A dict: {"prospect_name": "John"}
+    This normalizes both into a flat dict.
+    """
+    if isinstance(raw, list):
+        return {item["id"]: item.get("value") for item in raw if "id" in item}
+    if isinstance(raw, dict):
+        return raw
+    logger.warning(f"Unexpected input_data type: {type(raw)}, defaulting to empty dict")
+    return {}
+
+
 def convert_option_value(value: Any, options: List[str]) -> str:
+    """Handle string, list index, or int index formats for option fields."""
     if isinstance(value, str) and value in options:
         return value
-
     if isinstance(value, list) and len(value) > 0:
         index = value[0]
         if isinstance(index, int) and 0 <= index < len(options):
             return options[index]
-
+        if isinstance(index, str) and index in options:
+            return index
     if isinstance(value, int) and 0 <= value < len(options):
         return options[value]
-
-    logger.warning(f"Invalid option {value}, defaulting to {options[0]}")
+    logger.warning(f"Invalid option value '{value}', defaulting to '{options[0]}'")
     return options[0]
 
 
-async def process_job(identifier_from_purchaser: str, input_data: dict):
+async def process_job(job_request):
+    """
+    Masumi SDK calls this with a single job_request object.
+    job_request.identifier_from_purchaser -> str
+    job_request.input_data -> list or dict (normalize it)
+    """
     try:
-        logger.info(f"Processing job {identifier_from_purchaser}")
+        identifier = job_request.identifier_from_purchaser
+        logger.info(f"Processing job: {identifier}")
+        
+        # TEMP: log raw request shape to Railway logs
+        logger.info(f"RAW job_request type: {type(job_request)}")
+        logger.info(f"RAW job_request dict: {vars(job_request)}")
+
+        # Normalize input regardless of shape Sokosumi sends
+        input_data = normalize_input_data(job_request.input_data)
+        logger.info(f"Normalized input_data: {input_data}")
 
         company_size = convert_option_value(
             input_data.get("company_size", "medium"),
             COMPANY_SIZE_OPTIONS
         )
-
         intent_signal_type = convert_option_value(
             input_data.get("intent_signal", "company_growth"),
             INTENT_SIGNAL_OPTIONS
@@ -70,10 +98,7 @@ async def process_job(identifier_from_purchaser: str, input_data: dict):
             }
         }
 
-        intent_description = input_data.get(
-            "intent_description",
-            "Recent company activity"
-        )
+        intent_description = input_data.get("intent_description", "Recent company activity")
 
         intent_signals = [
             {
@@ -103,11 +128,9 @@ async def process_job(identifier_from_purchaser: str, input_data: dict):
                 json=outreach_request,
                 timeout=aiohttp.ClientTimeout(total=OUTREACH_TIMEOUT)
             ) as response:
-
                 if response.status != 200:
                     error_data = await response.text()
-                    raise Exception(f"Node service error: {error_data}")
-
+                    raise Exception(f"Node service error {response.status}: {error_data}")
                 result = await response.json()
 
         if not result.get("success"):
@@ -115,15 +138,16 @@ async def process_job(identifier_from_purchaser: str, input_data: dict):
 
         data = result.get("data", {})
 
-        return json.dumps({
+        # ✅ Return plain dict — NOT json.dumps()
+        return {
             "intentConfidence": data.get("intentConfidence"),
             "reasoningSummary": data.get("reasoningSummary"),
             "recommendedMessage": data.get("recommendedMessage"),
             "alternativeMessages": data.get("alternativeMessages", []),
             "suggestedFollowUpTiming": data.get("suggestedFollowUpTiming"),
             "processingMetadata": data.get("processingMetadata", {})
-        })
+        }
 
     except Exception as e:
-        logger.error(f"Job failed: {e}")
+        logger.error(f"Job failed: {e}", exc_info=True)
         raise

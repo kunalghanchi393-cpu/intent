@@ -21,85 +21,43 @@ INPUT_SCHEMA = {
             "id": "prospect_name",
             "type": "text",
             "name": "Prospect Name",
-            "data": {
-                "placeholder": "Enter prospect's full name",
-                "description": "Full name of the prospect"
-            },
-            "validations": [
-                {"validation": "min", "value": "2"},
-                {"validation": "max", "value": "100"}
-            ]
+            "data": {"placeholder": "Enter prospect's full name"}
         },
         {
             "id": "prospect_email",
             "type": "email",
             "name": "Prospect Email",
-            "data": {
-                "placeholder": "prospect@company.com",
-                "description": "Email address of the prospect"
-            },
-            "validations": [
-                {"validation": "format", "value": "email"}
-            ]
+            "data": {"placeholder": "prospect@company.com"}
         },
         {
             "id": "prospect_role",
             "type": "text",
             "name": "Prospect Role",
-            "data": {
-                "placeholder": "e.g., VP of Sales",
-                "description": "Job title or role of the prospect"
-            },
-            "validations": [
-                {"validation": "min", "value": "2"},
-                {"validation": "max", "value": "100"}
-            ]
+            "data": {"placeholder": "e.g., VP of Sales"}
         },
         {
             "id": "company_name",
             "type": "text",
             "name": "Company Name",
-            "data": {
-                "placeholder": "Enter company name",
-                "description": "Name of the prospect's company"
-            },
-            "validations": [
-                {"validation": "min", "value": "2"},
-                {"validation": "max", "value": "100"}
-            ]
+            "data": {"placeholder": "Enter company name"}
         },
         {
             "id": "company_industry",
             "type": "text",
             "name": "Company Industry",
-            "data": {
-                "placeholder": "e.g., Technology, Healthcare",
-                "description": "Industry sector of the company"
-            },
-            "validations": [
-                {"validation": "min", "value": "2"},
-                {"validation": "max", "value": "50"}
-            ]
+            "data": {"placeholder": "e.g., Technology, Healthcare"}
         },
         {
             "id": "company_size",
             "type": "option",
             "name": "Company Size",
-            "data": {
-                "description": "Size of the company",
-                "values": ["startup", "small", "medium", "large", "enterprise"]
-            },
-            "validations": [
-                {"validation": "min", "value": "1"},
-                {"validation": "max", "value": "1"}
-            ]
+            "data": {"values": ["startup", "small", "medium", "large", "enterprise"]}
         },
         {
             "id": "intent_signal",
             "type": "option",
             "name": "Intent Signal Type",
             "data": {
-                "description": "Type of intent signal detected",
                 "values": [
                     "job_change",
                     "funding_event",
@@ -107,24 +65,13 @@ INPUT_SCHEMA = {
                     "company_growth",
                     "industry_trend"
                 ]
-            },
-            "validations": [
-                {"validation": "min", "value": "1"},
-                {"validation": "max", "value": "1"}
-            ]
+            }
         },
         {
             "id": "intent_description",
             "type": "text",
             "name": "Intent Description",
-            "data": {
-                "placeholder": "Describe the intent signal",
-                "description": "Detailed description of the intent signal"
-            },
-            "validations": [
-                {"validation": "min", "value": "10"},
-                {"validation": "max", "value": "500"}
-            ]
+            "data": {"placeholder": "Describe the intent signal"}
         }
     ]
 }
