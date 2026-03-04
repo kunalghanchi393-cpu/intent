@@ -59,6 +59,7 @@ def convert_option_value(value: Any, options: List[str]) -> str:
 
 
 async def process_job(job_request):
+    print("JOB REQUEST RECEIVED:", job_request)
     """
     Masumi SDK calls this with a single job_request object.
     job_request.identifier_from_purchaser -> str
