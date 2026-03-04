@@ -58,29 +58,21 @@ def convert_option_value(value: Any, options: List[str]) -> str:
     return options[0]
 
 
-async def process_job(job_request):
-    print("JOB REQUEST RECEIVED:", job_request)
-    """
-    Masumi SDK calls this with a single job_request object.
-    job_request.identifier_from_purchaser -> str
-    job_request.input_data -> list or dict (normalize it)
-    """
-    try:
-        identifier = job_request.identifier_from_purchaser
-        logger.info(f"Processing job: {identifier}")
-        
-        # TEMP: log raw request shape to Railway logs
-        logger.info(f"RAW job_request type: {type(job_request)}")
-        logger.info(f"RAW job_request dict: {vars(job_request)}")
+async def process_job(identifier_from_purchaser: str, input_data: dict):
 
-        # Normalize input regardless of shape Sokosumi sends
-        input_data = normalize_input_data(job_request.input_data)
-        logger.info(f"Normalized input_data: {input_data}")
+    logger.info(f"Processing job: {identifier_from_purchaser}")
+    logger.info(f"Raw input_data: {input_data}")
+
+    try:
+
+        # Normalize input if Sokosumi sends list format
+        input_data = normalize_input_data(input_data)
 
         company_size = convert_option_value(
             input_data.get("company_size", "medium"),
             COMPANY_SIZE_OPTIONS
         )
+
         intent_signal_type = convert_option_value(
             input_data.get("intent_signal", "company_growth"),
             INTENT_SIGNAL_OPTIONS
@@ -99,7 +91,10 @@ async def process_job(job_request):
             }
         }
 
-        intent_description = input_data.get("intent_description", "Recent company activity")
+        intent_description = input_data.get(
+            "intent_description",
+            "Recent company activity"
+        )
 
         intent_signals = [
             {
@@ -129,9 +124,11 @@ async def process_job(job_request):
                 json=outreach_request,
                 timeout=aiohttp.ClientTimeout(total=OUTREACH_TIMEOUT)
             ) as response:
+
                 if response.status != 200:
                     error_data = await response.text()
-                    raise Exception(f"Node service error {response.status}: {error_data}")
+                    raise Exception(f"Node service error: {error_data}")
+
                 result = await response.json()
 
         if not result.get("success"):
@@ -139,7 +136,6 @@ async def process_job(job_request):
 
         data = result.get("data", {})
 
-        # ✅ Return plain dict — NOT json.dumps()
         return {
             "intentConfidence": data.get("intentConfidence"),
             "reasoningSummary": data.get("reasoningSummary"),
