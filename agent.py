@@ -58,14 +58,16 @@ def convert_option_value(value: Any, options: List[str]) -> str:
     return options[0]
 
 
-async def process_job(identifier_from_purchaser: str, input_data: dict):
+async def process_job(job_request):
 
-    logger.info(f"Processing job: {identifier_from_purchaser}")
-    logger.info(f"Raw input_data: {input_data}")
+    identifier = job_request.identifier_from_purchaser
+    input_data = job_request.input_data
+
+    logger.info(f"Processing job {identifier}")
+    logger.info(f"Input data received: {input_data}")
 
     try:
 
-        # Normalize input if Sokosumi sends list format
         input_data = normalize_input_data(input_data)
 
         company_size = convert_option_value(
@@ -91,10 +93,7 @@ async def process_job(identifier_from_purchaser: str, input_data: dict):
             }
         }
 
-        intent_description = input_data.get(
-            "intent_description",
-            "Recent company activity"
-        )
+        intent_description = input_data.get("intent_description", "Recent activity")
 
         intent_signals = [
             {
@@ -103,13 +102,6 @@ async def process_job(identifier_from_purchaser: str, input_data: dict):
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "relevanceScore": 0.8,
                 "source": "User Input"
-            },
-            {
-                "type": "company_growth",
-                "description": f"Company size: {company_size}",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "relevanceScore": 0.6,
-                "source": "Company Context"
             }
         ]
 
@@ -125,26 +117,14 @@ async def process_job(identifier_from_purchaser: str, input_data: dict):
                 timeout=aiohttp.ClientTimeout(total=OUTREACH_TIMEOUT)
             ) as response:
 
-                if response.status != 200:
-                    error_data = await response.text()
-                    raise Exception(f"Node service error: {error_data}")
-
                 result = await response.json()
 
-        if not result.get("success"):
-            raise Exception(result.get("error", "Unknown processing error"))
-
-        data = result.get("data", {})
-
         return {
-            "intentConfidence": data.get("intentConfidence"),
-            "reasoningSummary": data.get("reasoningSummary"),
-            "recommendedMessage": data.get("recommendedMessage"),
-            "alternativeMessages": data.get("alternativeMessages", []),
-            "suggestedFollowUpTiming": data.get("suggestedFollowUpTiming"),
-            "processingMetadata": data.get("processingMetadata", {})
+            "result": result
         }
 
     except Exception as e:
-        logger.error(f"Job failed: {e}", exc_info=True)
+        logger.error(f"Job failed: {e}")
         raise
+
+  
