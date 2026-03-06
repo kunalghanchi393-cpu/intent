@@ -58,7 +58,7 @@ def convert_option_value(value: Any, options: List[str]) -> str:
     return options[0]
 
 
-async def process_job(job_request):
+async def process_job(identifier_from_purchaser, input_data):
 
     identifier = job_request.identifier_from_purchaser
     input_data = job_request.input_data
