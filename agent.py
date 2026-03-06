@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
 Intent-Driven Cold Outreach Agent - Masumi SDK Integration
-Business logic only.
-Masumi SDK handles protocol, payments, blockchain, lifecycle.
 """
 
 import os
@@ -27,78 +25,77 @@ INTENT_SIGNAL_OPTIONS = [
 ]
 
 
-def normalize_input_data(raw: Any) -> dict:
-    """
-    Sokosumi may send input_data as either:
-      - A list: [{"id": "prospect_name", "value": "John"}]
-      - A dict: {"prospect_name": "John"}
-    This normalizes both into a flat dict.
-    """
-    if isinstance(raw, list):
-        return {item["id"]: item.get("value") for item in raw if "id" in item}
+def normalize_input(raw: Any) -> dict:
+    """Handle both list and dict shapes for input_data."""
     if isinstance(raw, dict):
         return raw
-    logger.warning(f"Unexpected input_data type: {type(raw)}, defaulting to empty dict")
+    if isinstance(raw, list):
+        return {item["id"]: item.get("value") for item in raw if "id" in item}
     return {}
 
 
-def convert_option_value(value: Any, options: List[str]) -> str:
-    """Handle string, list index, or int index formats for option fields."""
+def convert_option(value: Any, options: List[str]) -> str:
+    """
+    Handles all option formats Sokosumi sends:
+    - String: "startup"
+    - List with index: [0]
+    - List with string: ["startup"]
+    - Int index: 0
+    """
     if isinstance(value, str) and value in options:
         return value
     if isinstance(value, list) and len(value) > 0:
-        index = value[0]
-        if isinstance(index, int) and 0 <= index < len(options):
-            return options[index]
-        if isinstance(index, str) and index in options:
-            return index
+        v = value[0]
+        if isinstance(v, int) and 0 <= v < len(options):
+            return options[v]
+        if isinstance(v, str) and v in options:
+            return v
     if isinstance(value, int) and 0 <= value < len(options):
         return options[value]
-    logger.warning(f"Invalid option value '{value}', defaulting to '{options[0]}'")
+    logger.warning("Invalid option '%s', defaulting to '%s'", value, options[0])
     return options[0]
 
 
-async def process_job(identifier_from_purchaser, input_data):
-
-    identifier = job_request.identifier_from_purchaser
-    input_data = job_request.input_data
-
-    logger.info(f"Processing job {identifier}")
-    logger.info(f"Input data received: {input_data}")
-
+# ✅ CORRECT: SDK calls with exactly 2 args (identifier_from_purchaser, input_data)
+async def process_job(identifier_from_purchaser: str, input_data: dict):
     try:
+        logger.info("process_job started — identifier: %s", identifier_from_purchaser)
+        logger.info("raw input_data: %s", input_data)
 
-        input_data = normalize_input_data(input_data)
+        # Normalize input shape
+        data = normalize_input(input_data)
+        logger.info("normalized input_data: %s", data)
 
-        company_size = convert_option_value(
-            input_data.get("company_size", "medium"),
+        # Resolve option fields — Sokosumi sends [0], [1] etc.
+        company_size = convert_option(
+            data.get("company_size", "medium"),
             COMPANY_SIZE_OPTIONS
         )
-
-        intent_signal_type = convert_option_value(
-            input_data.get("intent_signal", "company_growth"),
+        intent_signal_type = convert_option(
+            data.get("intent_signal", "company_growth"),
             INTENT_SIGNAL_OPTIONS
         )
 
+        logger.info("company_size resolved: %s", company_size)
+        logger.info("intent_signal resolved: %s", intent_signal_type)
+
         prospect_data = {
-            "role": input_data.get("prospect_role", ""),
+            "role": data.get("prospect_role", ""),
             "companyContext": {
-                "name": input_data.get("company_name", ""),
-                "industry": input_data.get("company_industry", "Technology"),
+                "name": data.get("company_name", ""),
+                "industry": data.get("company_industry", "Technology"),
                 "size": company_size
             },
             "contactDetails": {
-                "name": input_data.get("prospect_name", ""),
-                "email": input_data.get("prospect_email", "")
+                "name": data.get("prospect_name", ""),
+                "email": data.get("prospect_email", "")
             }
         }
-
-        intent_description = input_data.get("intent_description", "Recent activity")
 
         intent_signals = [
             {
                 "type": intent_signal_type,
-                "description": intent_description,
+                "description": data.get("intent_description", "Recent company activity"),
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "relevanceScore": 0.8,
                 "source": "User Input"
@@ -110,21 +107,36 @@ async def process_job(identifier_from_purchaser, input_data):
             "intentSignals": intent_signals
         }
 
+        logger.info("Calling outreach service at %s", OUTREACH_SERVICE_URL)
+
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{OUTREACH_SERVICE_URL}/agent/outreach",
                 json=outreach_request,
                 timeout=aiohttp.ClientTimeout(total=OUTREACH_TIMEOUT)
             ) as response:
-
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise Exception(f"Outreach service error {response.status}: {error_text}")
                 result = await response.json()
 
+        logger.info("Outreach service response: %s", result)
+
+        if not result.get("success"):
+            raise Exception(result.get("error", "Unknown error from outreach service"))
+
+        output = result.get("data", {})
+
+        # ✅ Return plain dict — NOT json.dumps()
         return {
-            "result": result
+            "intentConfidence": output.get("intentConfidence"),
+            "reasoningSummary": output.get("reasoningSummary"),
+            "recommendedMessage": output.get("recommendedMessage"),
+            "alternativeMessages": output.get("alternativeMessages", []),
+            "suggestedFollowUpTiming": output.get("suggestedFollowUpTiming"),
+            "processingMetadata": output.get("processingMetadata", {})
         }
 
     except Exception as e:
-        logger.error(f"Job failed: {e}")
+        logger.error("Job failed: %s", e, exc_info=True)
         raise
-
-  
