@@ -59,6 +59,7 @@ def convert_option(value: Any, options: List[str]) -> str:
 # ✅ CORRECT: SDK calls with exactly 2 args (identifier_from_purchaser, input_data)
 async def process_job(identifier_from_purchaser: str, input_data: dict):
     try:
+        logger.info("OUTREACH_SERVICE_URL = %s", OUTREACH_SERVICE_URL)
         logger.info("process_job started — identifier: %s", identifier_from_purchaser)
         logger.info("raw input_data: %s", input_data)
 
