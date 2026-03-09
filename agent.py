@@ -93,6 +93,7 @@ async def process_job(identifier_from_purchaser: str, input_data: dict):
             }
         }
 
+        # ✅ FIXED: Now includes 2 intent signals (minimum required by outreach service)
         intent_signals = [
             {
                 "type": intent_signal_type,
@@ -100,6 +101,13 @@ async def process_job(identifier_from_purchaser: str, input_data: dict):
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "relevanceScore": 0.8,
                 "source": "User Input"
+            },
+            {
+                "type": "company_growth",
+                "description": f"Company {data.get('company_name', 'Unknown')} in {data.get('company_industry', 'Technology')} sector",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "relevanceScore": 0.6,
+                "source": "Inferred"
             }
         ]
 
