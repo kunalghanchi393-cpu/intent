@@ -5,15 +5,16 @@ Intent-Driven Cold Outreach Agent - Masumi SDK Integration
 
 import os
 import json
+import asyncio
 import aiohttp
 import logging
 from typing import Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
 OUTREACH_SERVICE_URL = os.getenv("OUTREACH_SERVICE_URL", "http://localhost:3000")
-OUTREACH_TIMEOUT = int(os.getenv("OUTREACH_TIMEOUT", "30"))
+OUTREACH_TIMEOUT = int(os.getenv("OUTREACH_TIMEOUT_SECONDS", "10"))
 
 COMPANY_SIZE_OPTIONS = ["startup", "small", "medium", "large", "enterprise"]
 INTENT_SIGNAL_OPTIONS = [
@@ -56,24 +57,30 @@ def convert_option(value: Any, options: List[str]) -> str:
     return options[0]
 
 
-# ✅ CORRECT: SDK calls with exactly 2 args (identifier_from_purchaser, input_data)
-async def process_job(identifier_from_purchaser: str, input_data: dict):
+async def process_job(job_request):
+    """
+    Masumi SDK calls this with a single job_request object.
+    job_request.identifier_from_purchaser -> str
+    job_request.input_data -> list or dict (normalize it)
+    """
     try:
-        logger.info("OUTREACH_SERVICE_URL = %s", OUTREACH_SERVICE_URL)
-        logger.info("process_job started — identifier: %s", identifier_from_purchaser)
-        logger.info("raw input_data: %s", input_data)
+        identifier = job_request.identifier_from_purchaser
+        logger.info(f"Processing job: {identifier}")
+        
+        # TEMP: log raw request shape to Railway logs
+        logger.info(f"RAW job_request type: {type(job_request)}")
+        logger.info(f"RAW job_request dict: {vars(job_request)}")
 
-        # Normalize input shape
-        data = normalize_input(input_data)
-        logger.info("normalized input_data: %s", data)
+        # Normalize input regardless of shape Sokosumi sends
+        input_data = normalize_input_data(job_request.input_data)
+        logger.info(f"Normalized input_data: {input_data}")
 
-        # Resolve option fields — Sokosumi sends [0], [1] etc.
-        company_size = convert_option(
-            data.get("company_size", "medium"),
+        company_size = convert_option_value(
+            input_data.get("company_size", "medium"),
             COMPANY_SIZE_OPTIONS
         )
-        intent_signal_type = convert_option(
-            data.get("intent_signal", "company_growth"),
+        intent_signal_type = convert_option_value(
+            input_data.get("intent_signal", "company_growth"),
             INTENT_SIGNAL_OPTIONS
         )
 
@@ -83,37 +90,38 @@ async def process_job(identifier_from_purchaser: str, input_data: dict):
         prospect_data = {
             "role": data.get("prospect_role", ""),
             "companyContext": {
-                "name": data.get("company_name", ""),
-                "industry": data.get("company_industry", "Technology"),
+                "name": input_data.get("company_name", ""),
+                "industry": input_data.get("company_industry", "Technology"),
                 "size": company_size
             },
             "contactDetails": {
-                "name": data.get("prospect_name", ""),
-                "email": data.get("prospect_email", "")
+                "name": input_data.get("prospect_name", ""),
+                "email": input_data.get("prospect_email", "")
             }
         }
 
-        # ✅ FIXED: Now includes 2 intent signals (minimum required by outreach service)
+        intent_description = input_data.get("intent_description", "Recent company activity")
+
         intent_signals = [
             {
                 "type": intent_signal_type,
-                "description": data.get("intent_description", "Recent company activity"),
+                "description": intent_description,
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "relevanceScore": 0.8,
-                "source": "User Input"
+                "source": "User Input",
             },
             {
                 "type": "company_growth",
-                "description": f"Company {data.get('company_name', 'Unknown')} in {data.get('company_industry', 'Technology')} sector",
+                "description": f"Company size: {company_size}",
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "relevanceScore": 0.6,
-                "source": "Inferred"
+                "source": "Company Context"
             }
         ]
 
         outreach_request = {
             "prospectData": prospect_data,
-            "intentSignals": intent_signals
+            "intentSignals": intent_signals,
         }
 
         logger.info("Calling outreach service at %s", OUTREACH_SERVICE_URL)
@@ -125,27 +133,36 @@ async def process_job(identifier_from_purchaser: str, input_data: dict):
                 timeout=aiohttp.ClientTimeout(total=OUTREACH_TIMEOUT)
             ) as response:
                 if response.status != 200:
-                    error_text = await response.text()
-                    raise Exception(f"Outreach service error {response.status}: {error_text}")
+                    error_data = await response.text()
+                    raise Exception(f"Node service error {response.status}: {error_data}")
                 result = await response.json()
 
         logger.info("Outreach service response: %s", result)
 
         if not result.get("success"):
-            raise Exception(result.get("error", "Unknown error from outreach service"))
+            raise Exception(result.get("error", "Unknown processing error"))
 
         output = result.get("data", {})
 
         # ✅ Return plain dict — NOT json.dumps()
         return {
-            "intentConfidence": output.get("intentConfidence"),
-            "reasoningSummary": output.get("reasoningSummary"),
-            "recommendedMessage": output.get("recommendedMessage"),
-            "alternativeMessages": output.get("alternativeMessages", []),
-            "suggestedFollowUpTiming": output.get("suggestedFollowUpTiming"),
-            "processingMetadata": output.get("processingMetadata", {})
+            "intentConfidence": data.get("intentConfidence"),
+            "reasoningSummary": data.get("reasoningSummary"),
+            "recommendedMessage": data.get("recommendedMessage"),
+            "alternativeMessages": data.get("alternativeMessages", []),
+            "suggestedFollowUpTiming": data.get("suggestedFollowUpTiming"),
+            "processingMetadata": data.get("processingMetadata", {})
         }
 
+        # Task 4.4 — before return
+        logger.debug(
+            "Returning success | keys=%s | intentConfidence=%s",
+            list(output.keys()),
+            output["intentConfidence"],
+        )
+
+        return output
+
     except Exception as e:
-        logger.error("Job failed: %s", e, exc_info=True)
+        logger.error(f"Job failed: {e}", exc_info=True)
         raise
