@@ -7,6 +7,7 @@ If the primary fails for any reason, automatically retries with the fallback.
 """
 
 import os
+import re
 import json
 import asyncio
 import logging
@@ -83,14 +84,30 @@ class EmailResult:
 
 
 def _parse_json_response(raw: str) -> dict:
-    """Handle both clean JSON and markdown-wrapped JSON."""
+    """Handle markdown-wrapped JSON and control characters from any LLM."""
     raw = raw.strip()
+
+    # Strip markdown fences
     if "```" in raw:
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
         raw = raw.split("```")[0]
-    return json.loads(raw.strip())
+
+    raw = raw.strip()
+
+    # Remove control characters (tab, newline inside strings etc.) that break json.loads
+    # Keep \n and \t that are valid JSON escape sequences (already escaped as \\n \\t)
+    raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', raw)
+
+    # Normalize literal newlines inside JSON string values to \n escape
+    # This handles Groq sometimes putting real newlines inside string values
+    def fix_newlines(m):
+        return m.group(0).replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+
+    raw = re.sub(r'"(?:[^"\\]|\\.)*"', fix_newlines, raw, flags=re.DOTALL)
+
+    return json.loads(raw)
 
 
 def _build_research_context(
