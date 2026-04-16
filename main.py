@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
-import sys
 import logging
 from masumi import run
 from agent import process_job
@@ -16,23 +15,12 @@ from agent import process_job
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Startup validation — fail fast if required env vars are missing
-# ---------------------------------------------------------------------------
-REQUIRED_ENV_VARS = ["OPENAI_API_KEY", "TAVILY_API_KEY", "AGENT_IDENTIFIER"]
-
-
-def validate_env():
-    missing = [v for v in REQUIRED_ENV_VARS if not os.getenv(v)]
-    if missing:
-        logger.error("Missing required environment variables: %s", missing)
-        print(f"ERROR: Missing required environment variables: {missing}")
-        print("Check your Railway Variables tab or .env file.")
-        sys.exit(1)
-    logger.info("Environment validation passed — all required vars present.")
-
-
-validate_env()
+# Warn about missing keys at startup — but don't crash.
+# email_generator raises at job time if OPENAI_API_KEY is absent.
+# researcher falls back gracefully if TAVILY_API_KEY is absent.
+for _var in ["OPENAI_API_KEY", "TAVILY_API_KEY"]:
+    if not os.getenv(_var):
+        logger.warning("Environment variable %s is not set.", _var)
 
 INPUT_SCHEMA = {
     "input_data": [
