@@ -1,9 +1,11 @@
 """
-Quick end-to-end tests for process_job.
+Quick end-to-end smoke test for process_job.
 Run with: python quick_test.py
+
+Requires OPENAI_API_KEY and TAVILY_API_KEY set in .env or environment.
 """
 import asyncio
-import os
+import json
 from dotenv import load_dotenv
 load_dotenv()  # must happen before agent import so env vars are set
 
@@ -22,52 +24,43 @@ LIVE_INPUT = {
 
 
 async def test_live():
-    print("\n=== TEST 1: Live call ===")
+    print("\n=== LIVE SMOKE TEST ===")
     result = await process_job("test-identifier-001", LIVE_INPUT)
-    print(f"Result keys: {list(result.keys())}")
-    print(f"intentConfidence: {result.get('intentConfidence')}")
-    print(f"status: {result.get('processingMetadata', {}).get('status')}")
-    print(f"recommendedMessage (first 200 chars):\n{result.get('recommendedMessage', '')[:200]}")
 
+    # Verify structure
     assert isinstance(result, dict), "Result must be a dict"
-    assert "recommendedMessage" in result, "Missing recommendedMessage"
-    assert "processingMetadata" in result, "Missing processingMetadata"
-    assert result["processingMetadata"]["status"] != "fallback", (
-        f"Got fallback — check OUTREACH_SERVICE_URL. Error: {result['processingMetadata'].get('error')}"
-    )
-    print("PASS")
+    assert result["status"] == "success", f"Expected status=success, got {result['status']}"
+    assert "email" in result, "Missing 'email' key"
+    assert "research" in result, "Missing 'research' key"
+    assert "quality_metrics" in result, "Missing 'quality_metrics' key"
+    assert "prospect" in result, "Missing 'prospect' key"
+    assert "generated_at" in result, "Missing 'generated_at' key"
 
+    # Verify PII is excluded
+    assert "prospect_email" not in result["prospect"], "PII leak: prospect_email in output"
+    assert "alex@stripe.com" not in json.dumps(result), "PII leak: email address in output"
 
-async def test_fallback():
-    print("\n=== TEST 2: Fallback (dead URL) ===")
-    # Override URL to a dead endpoint for this test
-    os.environ["OUTREACH_SERVICE_URL"] = "http://localhost:9999/dead"
+    # Verify email content
+    assert result["email"]["subject"], "Empty subject"
+    assert result["email"]["body"], "Empty body"
+    assert result["email"]["word_count"] > 0, "Word count should be > 0"
+    assert result["email"]["word_count"] <= 200, f"Email too long: {result['email']['word_count']} words"
 
-    # Re-import to pick up new env var — patch module-level constant directly
-    import agent
-    original_url = agent.OUTREACH_SERVICE_URL
-    agent.OUTREACH_SERVICE_URL = "http://localhost:9999/dead"
-
-    try:
-        result = await process_job("test-identifier-fallback", LIVE_INPUT)
-        print(f"Result keys: {list(result.keys())}")
-        print(f"status: {result.get('processingMetadata', {}).get('status')}")
-        print(f"error: {result.get('processingMetadata', {}).get('error')}")
-
-        assert isinstance(result, dict), "Result must be a dict"
-        assert result["processingMetadata"]["status"] == "fallback", "Expected fallback status"
-        assert result["processingMetadata"]["error"], "error field must not be empty"
-        assert result["intentConfidence"] == 0.0, "intentConfidence must be 0.0 on fallback"
-        assert isinstance(result["alternativeMessages"], list), "alternativeMessages must be a list"
-        print("PASS")
-    finally:
-        agent.OUTREACH_SERVICE_URL = original_url
+    print(f"Status: {result['status']}")
+    print(f"Research successful: {result['research']['successful']}")
+    print(f"Findings: {len(result['research']['findings'])}")
+    print(f"Subject: {result['email']['subject']}")
+    print(f"Word count: {result['email']['word_count']}")
+    print(f"Confidence: {result['quality_metrics']['confidence_score']}")
+    print(f"Personalization: {result['quality_metrics']['personalization_score']}")
+    print("\n--- Full Output ---")
+    print(json.dumps(result, indent=2))
+    print("\nPASS ✓")
 
 
 async def main():
     await test_live()
-    await test_fallback()
-    print("\nAll tests passed.")
+    print("\nSmoke test passed.")
 
 
 asyncio.run(main())

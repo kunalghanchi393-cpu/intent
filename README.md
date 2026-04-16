@@ -1,115 +1,143 @@
 # Intent-Driven Cold Outreach Agent
 
-A Masumi SDK-based agent that generates personalized cold outreach messages based on prospect data and intent signals.
+A Masumi SDK-based AI agent that generates hyper-personalized cold outreach emails using real-time company research and intent signals. Built for the Masumi/Sokosumi marketplace.
 
 ## Features
 
-- Intent-driven message generation
-- Personalized outreach based on prospect context
-- Company size and industry analysis
-- Multiple message alternatives
-- Follow-up timing recommendations
+- **Real-time research** — Tavily API searches for recent company news, funding, hiring, and tech adoption
+- **Intent-driven personalization** — Emails reference specific, verifiable facts about the prospect's company
+- **Quality guardrails** — Banned phrase detection, word count enforcement, and confidence scoring
+- **Non-blocking async** — Tavily sync calls wrapped in `asyncio.to_thread()` so Railway's event loop is never blocked
+- **Graceful degradation** — Research failures are non-fatal; the agent still generates a useful email from provided context
+- **Privacy-first** — Prospect email addresses are never logged or included in output
+
+## Architecture
+
+```
+main.py              → Masumi SDK entry point + env validation
+agent.py             → Orchestration: normalize → research → generate → format
+researcher.py        → Async Tavily research (non-fatal failures)
+email_generator.py   → OpenAI gpt-4o-mini email generation (fatal failures)
+formatter.py         → Clean output formatting for buyers
+```
 
 ## Setup
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.11+
+- OpenAI API key ([platform.openai.com](https://platform.openai.com))
+- Tavily API key ([tavily.com](https://tavily.com) — 1,000 free searches/month)
 - Masumi SDK credentials
 
 ### Installation
 
-1. Clone the repository:
 ```bash
 git clone https://github.com/kp183/intent.git
 cd intent
-```
-
-2. Install dependencies:
-```bash
 pip install -r requirements.txt
-```
-
-3. Configure environment variables:
-```bash
 cp .env.example .env
 # Edit .env with your credentials
 ```
 
-### Configuration
+### Environment Variables
 
-Get your credentials from the Masumi admin interface:
-- `AGENT_IDENTIFIER` - Your agent's unique identifier (120 characters)
-- `SELLER_VKEY` - Your seller verification key
-- `PAYMENT_API_KEY` - Your payment API key
+**Required:**
+- `OPENAI_API_KEY` — OpenAI API key
+- `TAVILY_API_KEY` — Tavily search API key
+- `AGENT_IDENTIFIER` — Masumi agent identifier
 
-## Running the Agent
+**Set by Railway (do not change):**
+- `PAYMENT_API_KEY` — Masumi payment key
+- `SELLER_VKEY` — Seller verification key
+- `NETWORK` — `Preprod` or `Mainnet`
+
+**Optional tuning:**
+- `OPENAI_TIMEOUT` — OpenAI request timeout in seconds (default: 60)
+- `RESEARCH_TIMEOUT` — Tavily search timeout in seconds (default: 30)
+
+## Running
 
 ### Local Development
 
-Start the agent:
 ```bash
 python main.py
 ```
 
-The agent will start on `http://0.0.0.0:8081`
+The agent starts on `http://0.0.0.0:8081`. Expose publicly with:
 
-### Expose publicly with ngrok:
 ```bash
 ngrok http 8081
 ```
 
 ### Deploy to Railway
 
-1. Push your code to GitHub
-2. Connect your GitHub repository to Railway
-3. Add environment variables in Railway dashboard:
-   - `AGENT_IDENTIFIER`
-   - `SELLER_VKEY`
-   - `PAYMENT_API_KEY`
-   - `NETWORK`
-   - `PAYMENT_SERVICE_URL`
-   - `OUTREACH_SERVICE_URL`
-4. Railway will automatically detect Python and deploy
-
-The app will be available at your Railway-provided URL.
+1. Push to GitHub
+2. Connect repo in Railway dashboard
+3. Add environment variables in Railway → Variables tab
+4. Railway auto-detects Python and deploys using the Procfile
 
 ## API Endpoints
 
-- **API Documentation**: `/docs`
-- **Availability Check**: `/availability`
-- **Input Schema**: `/input_schema`
-- **Start Job**: `/start_job`
+- `GET /docs` — API documentation
+- `GET /availability` — Health check
+- `GET /input_schema` — Returns accepted input fields
+- `POST /start_job` — Starts an outreach generation job
 
 ## Input Schema
 
-The agent accepts the following inputs:
+| Field | Type | Description |
+|-------|------|-------------|
+| `prospect_name` | text | Prospect's full name |
+| `prospect_email` | email | Prospect's email (used internally, never in output) |
+| `prospect_role` | text | Job title (e.g., VP of Engineering) |
+| `company_name` | text | Company name |
+| `company_industry` | text | Industry sector |
+| `company_size` | option | startup, small, medium, large, enterprise |
+| `intent_signal` | option | job_change, funding_event, technology_adoption, company_growth, industry_trend |
+| `intent_description` | text | Free-text description of the intent signal |
 
-- `prospect_name` (string) - Name of the prospect
-- `prospect_email` (string) - Email address
-- `prospect_role` (string) - Job role/title
-- `company_name` (string) - Company name
-- `company_industry` (string) - Industry sector
-- `company_size` (options) - startup, small, medium, large, enterprise
-- `intent_signal` (options) - job_change, funding_event, technology_adoption, company_growth, industry_trend
-- `intent_description` (string) - Description of the intent signal
+## Output Format
 
-## Output
+```json
+{
+  "status": "success",
+  "prospect": {
+    "name": "John Smith",
+    "role": "VP of Engineering",
+    "company": "Acme Corp"
+  },
+  "intent_signal": "funding_event",
+  "research": {
+    "successful": true,
+    "findings": [
+      "Acme Corp raised $12M Series A in November 2024 (TechCrunch)",
+      "Headcount grew from 45 to 120 employees in 12 months"
+    ],
+    "summary": "Research on Acme Corp: ...",
+    "sources_used": 3
+  },
+  "email": {
+    "subject": "Congrats on the raise, John",
+    "body": "Hi John,\n\nSaw the Series A news — congrats...",
+    "word_count": 127
+  },
+  "quality_metrics": {
+    "confidence_score": 0.91,
+    "personalization_score": 0.94,
+    "recommended_follow_up_days": 3,
+    "reasoning": "Funding creates a 72-hour window where new budget decisions are made.",
+    "research_backed": true
+  },
+  "generated_at": "2025-01-15T10:30:00.000Z"
+}
+```
 
-The agent returns:
+## Testing
 
-- `intentConfidence` - Confidence score for the intent
-- `reasoningSummary` - Analysis of the prospect
-- `recommendedMessage` - Primary outreach message
-- `alternativeMessages` - Alternative message options
-- `suggestedFollowUpTiming` - Recommended follow-up schedule
-- `processingMetadata` - Processing details
-
-## Architecture
-
-- `agent.py` - Business logic for outreach generation
-- `main.py` - Masumi SDK entry point
-- Integrates with Node.js outreach service for message generation
+```bash
+pytest tests/ -v
+```
 
 ## License
 

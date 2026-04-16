@@ -1,53 +1,76 @@
 #!/usr/bin/env python3
 """
-masumi-agent - Main Entry Point
-This is the entry point for the Masumi agent server.
+main.py — Masumi SDK entry point.
+Do not change SDK patterns or INPUT_SCHEMA structure.
 """
 
 from dotenv import load_dotenv
 load_dotenv()
 
+import os
+import sys
+import logging
 from masumi import run
 from agent import process_job
 
-# Input schema — Masumi/Sokosumi format
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Startup validation — fail fast if required env vars are missing
+# ---------------------------------------------------------------------------
+REQUIRED_ENV_VARS = ["OPENAI_API_KEY", "TAVILY_API_KEY", "AGENT_IDENTIFIER"]
+
+
+def validate_env():
+    missing = [v for v in REQUIRED_ENV_VARS if not os.getenv(v)]
+    if missing:
+        logger.error("Missing required environment variables: %s", missing)
+        print(f"ERROR: Missing required environment variables: {missing}")
+        print("Check your Railway Variables tab or .env file.")
+        sys.exit(1)
+    logger.info("Environment validation passed — all required vars present.")
+
+
+validate_env()
+
 INPUT_SCHEMA = {
     "input_data": [
         {
             "id": "prospect_name",
             "type": "text",
             "name": "Prospect Name",
-            "data": {"placeholder": "Enter prospect's full name"}
+            "data": {"placeholder": "Enter prospect's full name"},
         },
         {
             "id": "prospect_email",
             "type": "email",
             "name": "Prospect Email",
-            "data": {"placeholder": "prospect@company.com"}
+            "data": {"placeholder": "prospect@company.com"},
         },
         {
             "id": "prospect_role",
             "type": "text",
             "name": "Prospect Role",
-            "data": {"placeholder": "e.g., VP of Sales"}
+            "data": {"placeholder": "e.g., VP of Sales"},
         },
         {
             "id": "company_name",
             "type": "text",
             "name": "Company Name",
-            "data": {"placeholder": "Enter company name"}
+            "data": {"placeholder": "Enter company name"},
         },
         {
             "id": "company_industry",
             "type": "text",
             "name": "Company Industry",
-            "data": {"placeholder": "e.g., Technology, Healthcare"}
+            "data": {"placeholder": "e.g., Technology"},
         },
         {
             "id": "company_size",
             "type": "option",
             "name": "Company Size",
-            "data": {"values": ["startup", "small", "medium", "large", "enterprise"]}
+            "data": {"values": ["startup", "small", "medium", "large", "enterprise"]},
         },
         {
             "id": "intent_signal",
@@ -59,16 +82,16 @@ INPUT_SCHEMA = {
                     "funding_event",
                     "technology_adoption",
                     "company_growth",
-                    "industry_trend"
+                    "industry_trend",
                 ]
-            }
+            },
         },
         {
             "id": "intent_description",
             "type": "text",
             "name": "Intent Description",
-            "data": {"placeholder": "Describe the intent signal"}
-        }
+            "data": {"placeholder": "Describe the intent signal — e.g. they just raised Series A"},
+        },
     ]
 }
 
@@ -77,8 +100,8 @@ def get_schema():
     return INPUT_SCHEMA
 
 
-# Entry point — works both via `python main.py` and Railway's Procfile
-run(
-    start_job_handler=process_job,
-    input_schema_handler=get_schema
-)
+if __name__ == "__main__":
+    run(
+        start_job_handler=process_job,
+        input_schema_handler=get_schema,
+    )
