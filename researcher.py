@@ -102,6 +102,26 @@ def clean_snippet(text: str) -> str:
     # Strip leading/trailing whitespace
     text = text.strip()
 
+    # Remove navigation/menu patterns ("Overview News Stories About X")
+    text = re.sub(r'^(Overview|Contents|Stories|About|Home|Menu|Nav)\s+', '', text, flags=re.IGNORECASE)
+
+    # Remove repeated "Product X Product Y Product Z" patterns
+    text = re.sub(r'(Product\s+\w+[\w\s]*?){2,}', '', text, flags=re.IGNORECASE)
+
+    # Remove "Published: date by author In category" patterns
+    text = re.sub(r'Published:\s+\w+\s+\d+,\s+\d{4}\s+by\s+[\w\s]+In\s+[\w\s]+', '', text, flags=re.IGNORECASE)
+
+    # Remove lines that are just navigation labels (short fragments under 30 chars before any real content)
+    lines = text.split('.')
+    lines = [l.strip() for l in lines if len(l.strip()) > 30]
+    text = '. '.join(lines)
+    if text and not text.endswith('.'):
+        text = text + '.'
+
+    # Collapse multiple spaces again after removals
+    text = re.sub(r' {2,}', ' ', text)
+    text = text.strip()
+
     # Truncate to 200 chars max
     if len(text) > 200:
         text = text[:200]
@@ -114,6 +134,10 @@ def clean_snippet(text: str) -> str:
             last_space = text.rfind(' ')
             if last_space > 80:
                 text = text[:last_space] + '...'
+
+    # Discard if too short after all cleaning — it's garbage
+    if len(text) < 40:
+        return ""
 
     return text
 
@@ -138,7 +162,8 @@ def _extract_findings(results: list, max_findings: int = 5) -> tuple[List[str], 
         seen.add(key)
 
         cleaned = clean_snippet(content[:300])
-        if cleaned:  # Only add non-empty cleaned findings
+        # Discard empty or too-short results after cleaning
+        if cleaned and len(cleaned) > 40:
             findings.append(cleaned)
         if url and url not in sources:
             sources.append(url)

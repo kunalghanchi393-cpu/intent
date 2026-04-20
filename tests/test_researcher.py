@@ -40,9 +40,38 @@ def test_clean_snippet_removes_urls():
 
 
 def test_clean_snippet_removes_list_markers():
-    raw = "- Item one\n* Item two\n3. Item three"
+    raw = "- Acme Corp raised ten million dollars in a new funding round recently\n* Acme Corp expanded to Europe this quarter successfully\n3. Acme Corp hired a new VP of Engineering last week"
     result = clean_snippet(raw)
-    assert result.startswith("Item")
+    assert '- ' not in result
+    assert '* ' not in result
+    assert len(result) > 0
+
+
+def test_clean_snippet_removes_navigation_prefix():
+    raw = "Overview News Stories About Stripe News Stripe raises $6.5B in new funding round from major investors."
+    result = clean_snippet(raw)
+    assert result.startswith("Overview") is False
+    assert "Stripe" in result
+
+
+def test_clean_snippet_removes_repeated_product_labels():
+    raw = "Product Stripe launches UAE Product Stripe acquires TaxJar Product Stripe Issuing in Europe now available."
+    result = clean_snippet(raw)
+    # Should be much shorter or empty after removing repeated Product patterns
+    assert result.count("Product") <= 1
+
+
+def test_clean_snippet_removes_published_byline():
+    raw = "Published: Mar 8, 2026 by Mike Brown In Small Business News Stripe hits $1.9T in total payment volume processed."
+    result = clean_snippet(raw)
+    assert "Published" not in result
+    assert "Mike Brown" not in result
+
+
+def test_clean_snippet_discards_short_results():
+    raw = "Read more"
+    result = clean_snippet(raw)
+    assert result == ""
 
 
 # --- _build_queries ---
@@ -67,9 +96,9 @@ def test_build_queries_unknown_signal_uses_base():
 
 def test_extract_findings_deduplicates():
     results = [
-        {"content": "Acme raised $10M in Series A funding round.", "url": "https://a.com"},
-        {"content": "Acme raised $10M in Series A funding round.", "url": "https://b.com"},
-        {"content": "Acme expanded to Europe this quarter.", "url": "https://c.com"},
+        {"content": "Acme raised $10M in Series A funding round from top-tier investors.", "url": "https://a.com"},
+        {"content": "Acme raised $10M in Series A funding round from top-tier investors.", "url": "https://b.com"},
+        {"content": "Acme expanded its operations to Europe this quarter with a major push.", "url": "https://c.com"},
     ]
     findings, sources = _extract_findings(results)
     assert len(findings) == 2  # duplicate removed
@@ -97,7 +126,7 @@ def test_extract_findings_cleans_markdown():
     """Verify findings are cleaned of markdown artifacts."""
     results = [
         {
-            "content": "## Big News\n\n**Acme** raised $10M in funding. Check https://acme.com for details.",
+            "content": "## Big News\n\n**Acme** raised $10M in their latest funding round, significantly boosting their valuation and market presence globally.",
             "url": "https://a.com",
         },
     ]
@@ -105,7 +134,6 @@ def test_extract_findings_cleans_markdown():
     assert len(findings) == 1
     assert '##' not in findings[0]
     assert '**' not in findings[0]
-    assert 'https://' not in findings[0]
 
 
 # --- _fallback ---
