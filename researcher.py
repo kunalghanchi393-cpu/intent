@@ -5,6 +5,7 @@ Research failures are non-fatal: always returns a ResearchResult.
 """
 
 import os
+import re
 import asyncio
 import logging
 from dataclasses import dataclass, field
@@ -70,6 +71,53 @@ def _build_queries(
     return base_queries + intent_queries.get(intent_signal, [])
 
 
+def clean_snippet(text: str) -> str:
+    """
+    Clean raw Tavily snippet into a readable sentence.
+    Strips markdown, headers, excess whitespace, URLs.
+    """
+    if not text or not isinstance(text, str):
+        return ""
+
+    # Remove markdown headers (## Heading, # Heading)
+    text = re.sub(r'#{1,6}\s+', '', text)
+
+    # Remove markdown bold and italic (**text**, *text*, __text__)
+    text = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
+    text = re.sub(r'_{1,2}(.*?)_{1,2}', r'\1', text)
+
+    # Remove URLs
+    text = re.sub(r'https?://\S+', '', text)
+
+    # Remove markdown list markers (- item, * item, 1. item)
+    text = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+
+    # Collapse multiple newlines and tabs into single space
+    text = re.sub(r'[\n\r\t]+', ' ', text)
+
+    # Collapse multiple spaces
+    text = re.sub(r' {2,}', ' ', text)
+
+    # Strip leading/trailing whitespace
+    text = text.strip()
+
+    # Truncate to 200 chars max
+    if len(text) > 200:
+        text = text[:200]
+        # Try to cut at last complete sentence
+        last_period = text.rfind('.')
+        if last_period > 80:
+            text = text[:last_period + 1]
+        else:
+            # Cut at last word boundary
+            last_space = text.rfind(' ')
+            if last_space > 80:
+                text = text[:last_space] + '...'
+
+    return text
+
+
 def _extract_findings(results: list, max_findings: int = 5) -> tuple[List[str], List[str]]:
     """Extract deduplicated snippets and source URLs from Tavily results."""
     findings: List[str] = []
@@ -89,7 +137,9 @@ def _extract_findings(results: list, max_findings: int = 5) -> tuple[List[str], 
             continue
         seen.add(key)
 
-        findings.append(content[:300])
+        cleaned = clean_snippet(content[:300])
+        if cleaned:  # Only add non-empty cleaned findings
+            findings.append(cleaned)
         if url and url not in sources:
             sources.append(url)
 
@@ -113,7 +163,8 @@ def _build_summary(company_name: str, findings: List[str]) -> str:
     # Truncate to ~300 chars for a clean 2-3 sentence summary
     if len(combined) > 300:
         combined = combined[:297] + "..."
-    return f"Research on {company_name}: {combined}"
+    summary = f"Research on {company_name}: {combined}"
+    return clean_snippet(summary)
 
 
 def _do_tavily_search(client: TavilyClient, query: str) -> dict:

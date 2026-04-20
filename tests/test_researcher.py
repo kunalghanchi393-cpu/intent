@@ -6,7 +6,43 @@ from researcher import (
     _build_queries,
     _extract_findings,
     _fallback,
+    clean_snippet,
 )
+
+
+# --- clean_snippet ---
+
+def test_clean_snippet_removes_markdown():
+    raw = "## Big Heading\n\nSome **bold** text with\n\nmultiple lines"
+    result = clean_snippet(raw)
+    assert '#' not in result
+    assert '**' not in result
+    assert '\n' not in result
+    assert len(result) > 0
+
+
+def test_clean_snippet_truncates_long_text():
+    raw = "A" * 300
+    result = clean_snippet(raw)
+    assert len(result) <= 200
+
+
+def test_clean_snippet_handles_empty():
+    assert clean_snippet("") == ""
+    assert clean_snippet(None) == ""
+
+
+def test_clean_snippet_removes_urls():
+    raw = "Check out https://example.com/page for more info about the company."
+    result = clean_snippet(raw)
+    assert "https://" not in result
+    assert "example.com" not in result
+
+
+def test_clean_snippet_removes_list_markers():
+    raw = "- Item one\n* Item two\n3. Item three"
+    result = clean_snippet(raw)
+    assert result.startswith("Item")
 
 
 # --- _build_queries ---
@@ -55,6 +91,21 @@ def test_extract_findings_max_cap():
     ]
     findings, sources = _extract_findings(results, max_findings=5)
     assert len(findings) == 5
+
+
+def test_extract_findings_cleans_markdown():
+    """Verify findings are cleaned of markdown artifacts."""
+    results = [
+        {
+            "content": "## Big News\n\n**Acme** raised $10M in funding. Check https://acme.com for details.",
+            "url": "https://a.com",
+        },
+    ]
+    findings, _ = _extract_findings(results)
+    assert len(findings) == 1
+    assert '##' not in findings[0]
+    assert '**' not in findings[0]
+    assert 'https://' not in findings[0]
 
 
 # --- _fallback ---

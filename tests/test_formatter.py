@@ -39,7 +39,7 @@ def test_format_result_structure():
     assert "prospect" in result
     assert "research" in result
     assert "email" in result
-    assert "quality_metrics" in result
+    assert "quality" in result
     assert "generated_at" in result
 
 
@@ -61,7 +61,7 @@ def test_format_result_no_prospect_email():
     assert "john@acme.com" not in str(result["prospect"])
 
 
-def test_format_result_scores_rounded():
+def test_format_result_scores_as_percentages():
     result = format_result(
         research=_make_research(),
         email=_make_email(),
@@ -72,9 +72,9 @@ def test_format_result_scores_rounded():
         intent_signal="funding_event",
     )
 
-    metrics = result["quality_metrics"]
-    assert metrics["confidence_score"] == 0.88
-    assert metrics["personalization_score"] == 0.91
+    quality = result["quality"]
+    assert quality["confidence"] == "88%"
+    assert quality["personalization"] == "91%"
 
 
 def test_format_result_research_failed():
@@ -88,18 +88,14 @@ def test_format_result_research_failed():
         intent_signal="job_change",
     )
 
-    assert result["research"]["successful"] is False
-    assert result["research"]["findings"] == []
-    assert result["research"]["sources_used"] == 0
-    assert result["quality_metrics"]["research_backed"] is False
+    assert "unavailable" in result["research"]["status"].lower()
+    assert result["research"]["key_findings"] == ["Research unavailable — email based on provided context"]
+    assert result["quality"]["research_backed"] == "No"
 
 
-def test_format_result_sources_count():
-    research = _make_research(successful=True)
-    research.sources = ["https://a.com", "https://b.com", "https://c.com"]
-
+def test_format_result_research_successful_status():
     result = format_result(
-        research=research,
+        research=_make_research(successful=True),
         email=_make_email(),
         prospect_name="John",
         prospect_email="john@acme.com",
@@ -108,7 +104,8 @@ def test_format_result_sources_count():
         intent_signal="company_growth",
     )
 
-    assert result["research"]["sources_used"] == 3
+    assert "successful" in result["research"]["status"].lower()
+    assert "1 finding" in result["research"]["status"]
 
 
 def test_format_result_generated_at_format():
@@ -125,10 +122,12 @@ def test_format_result_generated_at_format():
     ts = result["generated_at"]
     assert ts.endswith("Z")
     assert "T" in ts
+    # No milliseconds — should NOT have a dot before Z
+    assert "." not in ts
 
 
-def test_format_result_email_word_count_included():
-    """Verify word_count is present in the email section."""
+def test_format_result_email_word_count_as_string():
+    """Verify word_count is a human-readable string like '95 words'."""
     result = format_result(
         research=_make_research(),
         email=_make_email(),
@@ -140,11 +139,11 @@ def test_format_result_email_word_count_included():
     )
 
     assert "word_count" in result["email"]
-    assert result["email"]["word_count"] == 95
+    assert result["email"]["word_count"] == "95 words"
 
 
-def test_format_result_intent_signal_passthrough():
-    """Verify the intent_signal is passed through correctly."""
+def test_format_result_intent_signal_human_readable():
+    """Verify the intent_signal is converted to human-readable label."""
     result = format_result(
         research=_make_research(),
         email=_make_email(),
@@ -155,4 +154,59 @@ def test_format_result_intent_signal_passthrough():
         intent_signal="technology_adoption",
     )
 
-    assert result["intent_signal"] == "technology_adoption"
+    assert result["prospect"]["intent_signal"] == "Technology Adoption"
+
+
+def test_format_result_intent_signal_job_change():
+    result = format_result(
+        research=_make_research(),
+        email=_make_email(),
+        prospect_name="John",
+        prospect_email="john@acme.com",
+        prospect_role="VP Sales",
+        company_name="Acme",
+        intent_signal="job_change",
+    )
+
+    assert result["prospect"]["intent_signal"] == "Job Change"
+
+
+def test_format_result_follow_up_as_string():
+    """Verify follow_up_in is a human-readable string like '3 days'."""
+    result = format_result(
+        research=_make_research(),
+        email=_make_email(),
+        prospect_name="John",
+        prospect_email="john@acme.com",
+        prospect_role="VP Sales",
+        company_name="Acme",
+        intent_signal="company_growth",
+    )
+
+    assert result["quality"]["follow_up_in"] == "3 days"
+
+
+def test_format_result_full_key_structure():
+    """Verify all expected keys are present in the new format."""
+    result = format_result(
+        research=_make_research(),
+        email=_make_email(),
+        prospect_name="John",
+        prospect_email="john@acme.com",
+        prospect_role="VP Sales",
+        company_name="Acme",
+        intent_signal="company_growth",
+    )
+
+    # Top-level keys
+    assert set(result.keys()) == {
+        "status", "prospect", "research", "email", "quality", "generated_at"
+    }
+
+    # Nested keys
+    assert set(result["prospect"].keys()) == {"name", "role", "company", "intent_signal"}
+    assert set(result["research"].keys()) == {"status", "key_findings", "summary"}
+    assert set(result["email"].keys()) == {"subject", "body", "word_count"}
+    assert set(result["quality"].keys()) == {
+        "confidence", "personalization", "research_backed", "follow_up_in", "reasoning"
+    }

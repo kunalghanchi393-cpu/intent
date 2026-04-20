@@ -161,7 +161,7 @@ async def test_process_job_research_failure_still_completes():
         )
 
     assert result["status"] == "success"
-    assert result["research"]["successful"] is False
+    assert "unavailable" in result["research"]["status"].lower()
 
 
 @pytest.mark.asyncio
@@ -240,17 +240,17 @@ async def test_process_job_output_has_all_required_keys():
 
     # Top-level keys
     assert set(result.keys()) == {
-        "status", "prospect", "intent_signal", "research",
-        "email", "quality_metrics", "generated_at"
+        "status", "prospect", "research",
+        "email", "quality", "generated_at"
     }
 
     # Nested keys
-    assert set(result["prospect"].keys()) == {"name", "role", "company"}
-    assert set(result["research"].keys()) == {"successful", "findings", "summary", "sources_used"}
+    assert set(result["prospect"].keys()) == {"name", "role", "company", "intent_signal"}
+    assert set(result["research"].keys()) == {"status", "key_findings", "summary"}
     assert set(result["email"].keys()) == {"subject", "body", "word_count"}
-    assert set(result["quality_metrics"].keys()) == {
-        "confidence_score", "personalization_score",
-        "recommended_follow_up_days", "reasoning", "research_backed"
+    assert set(result["quality"].keys()) == {
+        "confidence", "personalization",
+        "follow_up_in", "reasoning", "research_backed"
     }
     assert result["generated_at"].endswith("Z")
 
